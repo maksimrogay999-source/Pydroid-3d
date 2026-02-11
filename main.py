@@ -158,8 +158,11 @@ class Engine:
                     elif p[0] == 'vt': vt.append(list(map(float, p[1:3])))
                     elif p[0] == 'vn': vn.append(list(map(float, p[1:4])))
                     elif p[0] == 'f':
-                        for vert in p[1:4]:
-                            parts = vert.split('/')
+                        face_vertices = p[1:]
+                        
+                        
+                        def parse_vertex(vert_str):
+                            parts = vert_str.split('/')
                             v_idx = int(parts[0]) - 1
                             t_idx = int(parts[1]) - 1 if len(parts) > 1 and parts[1] else -1
                             n_idx = int(parts[2]) - 1 if len(parts) > 2 and parts[2] else -1
@@ -167,9 +170,23 @@ class Engine:
                             p_d = v[v_idx]
                             u_d = vt[t_idx] if t_idx != -1 else [0, 0]
                             n_d = vn[n_idx] if n_idx != -1 else [0, 1, 0]
+                            return [p_d[0], p_d[1], p_d[2], 1, 1, 1, u_d[0], u_d[1], n_d[0], n_d[1], n_d[2]]
+
+
+                        if len(face_vertices) == 3:
+                            for v_str in face_vertices:
+                                final_v.extend(parse_vertex(v_str))
+                        
+
+                        elif len(face_vertices) == 4:
+                            v1 = parse_vertex(face_vertices[0])
+                            v2 = parse_vertex(face_vertices[1])
+                            v3 = parse_vertex(face_vertices[2])
+                            v4 = parse_vertex(face_vertices[3])
                             
-                            # 3(pos) + 3(col) + 2(uv) + 3(norm) = 11 float
-                            final_v.extend([p_d[0], p_d[1], p_d[2], 1, 1, 1, u_d[0], u_d[1], n_d[0], n_d[1], n_d[2]])
+                            final_v.extend(v1 + v2 + v3)
+                            final_v.extend(v1 + v3 + v4)
+
             
             size = [max_p[i] - min_p[i] for i in range(3)]
             vbo = glGenBuffers(1)
