@@ -1,4 +1,4 @@
-import sdl2
+import sdl2 # Костыль включающий графиечский режим
 from main import *
 if __name__ == "__main__":
     core = Engine()
