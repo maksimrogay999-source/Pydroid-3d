@@ -1,6 +1,6 @@
 # Pydroid-3D
 
-Лёгкий 3D-движок для Android (Pydroid3) на чистом OpenGL ES 2.0.
+Лёгкий 3D-движок для Android (Pydroid3) на OpenGL ES 2.0.
 
 ## Возможности
 - Загрузка OBJ с текстурами и нормалями
@@ -9,14 +9,14 @@
 - Текстуры (PNG через Pillow)
 
 ## Установка в Pydroid3
-1. Установите из репозитория: `pip install pysdl2 pillow numpy PyOpenGL`
-2. Скопируйте `main.py` и `example.py`
-3. Положите `box.obj` и `tex.png`
+1. Установите пакеты: `pip install pysdl2 pillow numpy PyOpenGL`
+2. Скопируйте репозиторий
+3. Установите модуль: `python build.py`
 4. Запустите `example.py`
 
 ## Пример
 ```python
-from main import *
+from engine_core import *
 core = Engine()
 box = core.load_obj("box.obj")
 while True:
