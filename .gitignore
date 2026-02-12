@@ -1,0 +1,7 @@
+*.o
+*.ali
+*.cpp
+build
+dist
+pydroid_3d.egg-info
+*.c
