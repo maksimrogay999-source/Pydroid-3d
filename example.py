@@ -7,7 +7,7 @@ if __name__ == "__main__":
         
     tex = core.load_texture("tex.png")
     box = core.load_obj("box.obj", tex)
-    box.z=-30
+    box.z=0
     running = True
     while running:
         core.ScreenColor(0.1, 0.1, 0.15, 1.0)
@@ -15,6 +15,7 @@ if __name__ == "__main__":
         if box:
             box.angle += 0.02
             box.z -= 0.02
+            cam.z -= 0.002
             core.draw(box)
 
         core.main()
