@@ -10,7 +10,7 @@ try:
     ctypes.CDLL('libGLESv2.so', mode=ctypes.RTLD_GLOBAL)
 except:
     pass
-
+cimport gles2
 from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
 
@@ -61,13 +61,27 @@ def is_collision(obj1, obj2):
 
 # ---           ДВИЖОК            ---
 
-class Engine:
+cdef class Engine:
+    cdef object window
+    cdef object context
+    cdef object _cam
+    cdef unsigned int default_tex
+    
+    cdef unsigned int shader
+    cdef int u_proj
+    cdef int u_view
+    cdef int u_model
+    
+
+    cdef int width
+    cdef int height
+
     def __init__(self, width=1080, height=1920):
         sdl2.ext.init()
         self.window = sdl2.ext.Window("3D Engine v11", size=(width, height), flags=sdl2.SDL_WINDOW_OPENGL)
         self.window.show()
         self.context = sdl2.SDL_GL_CreateContext(self.window.window)
-        glEnable(GL_DEPTH_TEST)
+        gles2.glEnable(gles2.GL_DEPTH_TEST)
         
         self.width = width
         self.height = height
@@ -78,7 +92,7 @@ class Engine:
         
         self.update_projection()
 
-    def update_projection(self):
+    cpdef update_projection(self):
         aspect = self.width / self.height
         fov = math.radians(45)
         f = 1.0 / math.tan(fov / 2.0)
@@ -90,14 +104,15 @@ class Engine:
             0, 0, (far+near)/(near-far), -1,
             0, 0, (2*far*near)/(near-far), 0
         ], dtype=np.float32)
+        cdef float[::1] proj_view = proj 
         
-        glUseProgram(self.shader)
-        glUniformMatrix4fv(self.u_proj, 1, GL_FALSE, proj)
+        gles2.glUseProgram(self.shader)
+        gles2.glUniformMatrix4fv(self.u_proj, 1, 0, &proj_view[0])
 
     def _create_white_texture(self):
         data = np.array([255, 255, 255, 255], dtype=np.uint8)
         t_id = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, t_id)
+        gles2.glBindTexture(gles2.GL_TEXTURE_2D, t_id)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
@@ -133,7 +148,7 @@ class Engine:
         try:
             img = Image.open(path).transpose(Image.FLIP_TOP_BOTTOM).convert("RGBA")
             t_id = glGenTextures(1)
-            glBindTexture(GL_TEXTURE_2D, t_id)
+            gles2.glBindTexture(gles2.GL_TEXTURE_2D, t_id)
             # фильтрация для MAG_FILTER
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
@@ -198,13 +213,13 @@ class Engine:
             print(f"Error loading OBJ: {e}")
             return None
     def wait(self,sec):
-    	sdl2.SDL_Delay(sec)
+        sdl2.SDL_Delay(sec)
     def main(self):
-    	 sdl2.SDL_GL_SwapWindow(self.window.window)
+         sdl2.SDL_GL_SwapWindow(self.window.window)
     def ScreenClear(self):
-    	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
     def ScreenColor(self,*args):
-    	glClearColor(*args)
+        glClearColor(*args)
     def draw(self, obj):
         if not obj: return
         glUseProgram(self.shader)
@@ -228,5 +243,5 @@ class Engine:
                 glEnableVertexAttribArray(loc)
                 glVertexAttribPointer(loc, size, GL_FLOAT, GL_FALSE, 44, ctypes.c_void_p(offset))
         
-        glBindTexture(GL_TEXTURE_2D, obj.texture_id)
+        gles2.glBindTexture(gles2.GL_TEXTURE_2D, obj.texture_id)
         glDrawArrays(GL_TRIANGLES, 0, obj.count)

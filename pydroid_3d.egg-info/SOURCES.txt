@@ -1,0 +1,9 @@
+LICENSE
+README.md
+engine.c
+setup.py
+pydroid_3d.egg-info/PKG-INFO
+pydroid_3d.egg-info/SOURCES.txt
+pydroid_3d.egg-info/dependency_links.txt
+pydroid_3d.egg-info/not-zip-safe
+pydroid_3d.egg-info/top_level.txt

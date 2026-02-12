@@ -1,5 +1,5 @@
 import sdl2 # Костыль включающий графический режим
-from main import *
+from engine_core import *
 if __name__ == "__main__":
     core = Engine()
 
