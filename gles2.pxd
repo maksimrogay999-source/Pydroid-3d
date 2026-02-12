@@ -6,9 +6,7 @@ cdef extern from "<GLES2/gl2.h>":
     unsigned int GL_TEXTURE_MIN_FILTER
     unsigned int GL_TEXTURE_MAG_FILTER
     unsigned int GL_LINEAR
-    unsigned int GL_RGBA
     unsigned int GL_UNSIGNED_BYTE
-    unsigned int GL_ARRAY_BUFFER
     unsigned int GL_STATIC_DRAW
     unsigned int GL_TRIANGLES
     unsigned int GL_COLOR_BUFFER_BIT
@@ -16,6 +14,15 @@ cdef extern from "<GLES2/gl2.h>":
     unsigned int GL_VERTEX_SHADER
     unsigned int GL_FRAGMENT_SHADER
     unsigned int GL_FLOAT
+    unsigned int GL_FRAMEBUFFER
+    unsigned int GL_COLOR_ATTACHMENT0
+    unsigned int GL_FRAMEBUFFER_COMPLETE
+    unsigned int GL_RGBA
+    unsigned int GL_RENDERBUFFER
+    unsigned int GL_DEPTH_COMPONENT16
+    unsigned int GL_DEPTH_ATTACHMENT
+
+
 
 
     void glEnable(unsigned int cap)
@@ -42,3 +49,18 @@ cdef extern from "<GLES2/gl2.h>":
     unsigned int glCreateProgram()
     void glAttachShader(unsigned int program, unsigned int shader)
     void glLinkProgram(unsigned int program)
+    void glGenFramebuffers(int n, unsigned int* ids)
+    void glBindFramebuffer(unsigned int target, unsigned int framebuffer)
+    void glFramebufferTexture2D(unsigned int target, unsigned int attachment, unsigned int textarget, unsigned int texture, int level)
+    unsigned int glCheckFramebufferStatus(unsigned int target)
+    void glDeleteFramebuffers(int n, unsigned int* framebuffers)
+    void glReadPixels(int x, int y, int width, int height, unsigned int format, unsigned int type, void* pixels)
+    void glViewport(int x, int y, int width, int height)
+    void glUniform4f(int location, float v0, float v1, float v2, float v3)
+    void glActiveTexture(unsigned int texture)
+    void glUniformMatrix4fv(int location, int count, unsigned char transpose, const float* value)
+    void glGenRenderbuffers(int n, unsigned int* renderbuffers)
+    void glBindRenderbuffer(unsigned int target, unsigned int renderbuffer)
+    void glRenderbufferStorage(unsigned int target, unsigned int internalformat, int width, int height)
+    void glFramebufferRenderbuffer(unsigned int target, unsigned int attachment, unsigned int renderbuffertarget, unsigned int renderbuffer)
+    void glUniform1i(int location, int v0)

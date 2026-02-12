@@ -30,6 +30,71 @@ cpdef unsigned int load_shaders(str v_code, str f_code):
     
     return prog
 
+from libc.stdlib cimport malloc, free
+
+cdef class FBO:
+    cdef public unsigned int id
+    cdef public unsigned int texture
+    cdef public unsigned int rbo
+    cdef int width, height
+
+    def __init__(self, int width, int height):
+        self.width = width
+        self.height = height
+        gles2.glGenTextures(1, &self.texture)
+        gles2.glBindTexture(gles2.GL_TEXTURE_2D, self.texture)
+        gles2.glTexImage2D(gles2.GL_TEXTURE_2D, 0, gles2.GL_RGBA, 
+                           width, height, 0, gles2.GL_RGBA, 
+                           gles2.GL_UNSIGNED_BYTE, NULL)
+        gles2.glTexParameteri(gles2.GL_TEXTURE_2D, gles2.GL_TEXTURE_MIN_FILTER, gles2.GL_LINEAR)
+        gles2.glTexParameteri(gles2.GL_TEXTURE_2D, gles2.GL_TEXTURE_MAG_FILTER, gles2.GL_LINEAR)
+        gles2.glGenFramebuffers(1, &self.id)
+        gles2.glBindFramebuffer(gles2.GL_FRAMEBUFFER, self.id)
+        gles2.glFramebufferTexture2D(gles2.GL_FRAMEBUFFER, gles2.GL_COLOR_ATTACHMENT0, 
+                                     gles2.GL_TEXTURE_2D, self.texture, 0)
+        gles2.glGenRenderbuffers(1, &self.rbo)
+        gles2.glBindRenderbuffer(gles2.GL_RENDERBUFFER, self.rbo)
+        gles2.glRenderbufferStorage(gles2.GL_RENDERBUFFER, gles2.GL_DEPTH_COMPONENT16, width, height)
+        gles2.glFramebufferRenderbuffer(gles2.GL_FRAMEBUFFER, gles2.GL_DEPTH_ATTACHMENT, 
+                                        gles2.GL_RENDERBUFFER, self.rbo)
+
+        if gles2.glCheckFramebufferStatus(gles2.GL_FRAMEBUFFER) != gles2.GL_FRAMEBUFFER_COMPLETE:
+            print("Ошибка: FBO не укомплектован!")
+
+        gles2.glBindFramebuffer(gles2.GL_FRAMEBUFFER, 0)
+
+
+    cpdef bind(self):
+        gles2.glBindFramebuffer(gles2.GL_FRAMEBUFFER, self.id)
+
+        gles2.glViewport(0, 0, self.width, self.height)
+
+    cpdef unbind(self, int screen_w, int screen_h):
+
+        gles2.glBindFramebuffer(gles2.GL_FRAMEBUFFER, 0)
+
+        gles2.glViewport(0, 0, screen_w, screen_h)
+
+    def __dealloc__(self):
+        gles2.glDeleteFramebuffers(1, &self.id)
+    cpdef save_screenshot(self, str filename):
+        cdef int size = self.width * self.height * 4
+        cdef unsigned char* data = <unsigned char*>malloc(size)
+    
+        try:
+            gles2.glBindFramebuffer(gles2.GL_FRAMEBUFFER, self.id)
+            gles2.glReadPixels(0, 0, self.width, self.height, gles2.GL_RGBA, gles2.GL_UNSIGNED_BYTE, data)
+            img_bytes = (<char*>data)[:size]
+            # OpenGL читает снизу вверх поэтому нужно перевернуть
+            img = Image.frombytes("RGBA", (self.width, self.height), img_bytes)
+            img = img.transpose(Image.FLIP_TOP_BOTTOM)
+            img.save(filename)
+            print(f"Скриншот сохранен: {filename}")
+        
+        finally:
+            free(data)
+            gles2.glBindFramebuffer(gles2.GL_FRAMEBUFFER, 0)
+
 
 class Camera:
     def __init__(self):
@@ -112,6 +177,7 @@ cdef class Engine:
     cdef unsigned int default_tex
     
     cdef unsigned int shader
+    cdef unsigned int gui_shader
     cdef int u_proj
     cdef int u_view
     cdef int u_model
@@ -187,6 +253,30 @@ cdef class Engine:
         self.u_proj = gles2.glGetUniformLocation(self.shader, "proj")
         self.u_view = gles2.glGetUniformLocation(self.shader, "view")
         self.u_model = gles2.glGetUniformLocation(self.shader, "model")
+        cdef str v_code = """
+attribute vec2 position;
+attribute vec2 texCoord;
+varying vec2 v_uv;
+uniform mat4 u_proj;
+uniform vec4 u_rect;
+
+void main() {
+    v_uv = texCoord;
+    vec2 pos = position * u_rect.zw + u_rect.xy;
+    gl_Position = u_proj * vec4(pos, 0.0, 1.0);
+}
+
+        """
+        cdef str f_code = """
+        precision mediump float;
+        varying vec2 v_uv;
+        uniform sampler2D u_texture;
+        void main() {
+            gl_FragColor = texture2D(u_texture, v_uv);
+        }
+        """
+
+        self.gui_shader = load_shaders(v_code, f_code)
 
     cpdef load_texture(self, path):
         cdef unsigned int t_id
@@ -318,6 +408,7 @@ cdef class Engine:
 
     cpdef draw(self, obj):
         if not obj: return
+        gles2.glEnable(gles2.GL_DEPTH_TEST)
         gles2.glUseProgram(self.shader)
         s, c = math.sin(obj.angle), math.cos(obj.angle)
         model = np.array([
@@ -344,3 +435,41 @@ cdef class Engine:
         
         gles2.glBindTexture(gles2.GL_TEXTURE_2D, obj.texture_id)
         gles2.glDrawArrays(gles2.GL_TRIANGLES, 0, obj.count)
+    cpdef draw_gui(self, unsigned int texture_id, float x, float y, float w, float h):
+        cdef float sw = <float>self.width
+        cdef float sh = <float>self.height
+        cdef float[:] view = np.array([
+            0.0, 0.0,  0.0, 0.0, 
+            1.0, 0.0,  1.0, 0.0, 
+            0.0, 1.0,  0.0, 1.0, 
+            1.0, 1.0,  1.0, 1.0  
+        ], dtype=np.float32)
+
+        gles2.glUseProgram(self.gui_shader)
+        gles2.glDisable(gles2.GL_DEPTH_TEST)
+        gles2.glBindBuffer(gles2.GL_ARRAY_BUFFER, 0)
+        cdef int rect_loc = gles2.glGetUniformLocation(self.gui_shader, "u_rect")
+        gles2.glUniform4f(rect_loc, x, y, w, h)
+        cdef float proj[16]
+        for i in range(16): proj[i] = 0.0
+        proj[0] = 2.0 / sw;    proj[12] = -1.0
+        proj[5] = -2.0 / sh;   proj[13] = 1.0
+        proj[10] = 1.0;        proj[15] = 1.0
+
+        cdef int proj_loc = gles2.glGetUniformLocation(self.gui_shader, "u_proj")
+        gles2.glUniformMatrix4fv(proj_loc, 1, 0, proj)
+        gles2.glActiveTexture(0x84C0)
+        gles2.glBindTexture(gles2.GL_TEXTURE_2D, texture_id)
+        gles2.glUniform1i(gles2.glGetUniformLocation(self.gui_shader, "u_texture"), 0)
+
+        cdef int pos_loc = gles2.glGetAttribLocation(self.gui_shader, "position")
+        cdef int uv_loc = gles2.glGetAttribLocation(self.gui_shader, "texCoord")
+        
+        gles2.glEnableVertexAttribArray(pos_loc)
+        gles2.glVertexAttribPointer(pos_loc, 2, 0x1406, 0, 16, &view[0])
+        gles2.glEnableVertexAttribArray(uv_loc)
+        gles2.glVertexAttribPointer(uv_loc, 2, 0x1406, 0, 16, &view[2])
+
+        gles2.glDrawArrays(0x0005, 0, 4)
+        gles2.glEnable(gles2.GL_DEPTH_TEST)
+
