@@ -24,3 +24,4 @@ while True:
     core.draw(box)
     core.main()
 ```
+![Скриншот работы движка](screenshots/demo.jpg)
