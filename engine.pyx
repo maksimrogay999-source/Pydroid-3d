@@ -6,7 +6,8 @@ from PIL import Image
 cimport numpy as cnp
 from libcpp.vector cimport vector
 from libc.stdio cimport fopen, fclose, FILE, fgets, sscanf
-from libc.math cimport INFINITY
+cimport cython
+from libc.math cimport INFINITY,fabsf
 
 # --- Настройки OpenGL для Pydroid3 -
 os.environ['PYOPENGL_PLATFORM'] = 'egl'
@@ -41,27 +42,54 @@ class Camera:
                        -np.dot(zaxis, [self.x, self.y, self.z])]
         return view.T
 
-class GameObject:
-    def __init__(self, vbo, count, texture_id, base_size):
+
+
+cdef class GameObject:
+    cdef public float x, y, z
+    cdef public float scale_x, scale_y, scale_z
+    cdef public float angle
+    cdef public int vbo, count, texture_id
+    cdef public float base_w, base_h, base_d
+
+    def __init__(self, int vbo, int count, int texture_id, list base_size):
         self.vbo = vbo
         self.count = count
         self.texture_id = texture_id
-        self.x = self.y = self.z = 0.0
+        
+        self.x = 0.0
+        self.y = 0.0
+        self.z = 0.0
         self.angle = 0.0
         self.scale_x = 1.0
         self.scale_y = 1.0
         self.scale_z = 1.0
-        self.base_size = base_size
+        self.base_w = base_size[0]
+        self.base_h = base_size[1]
+        self.base_d = base_size[2]
+
+    @property
+    def size(self):
+        return [self.base_w * self.scale_x, 
+                self.base_h * self.scale_y, 
+                self.base_d * self.scale_z]
+
+
 
 # ---           КОЛЛИЗИИ            ---
 
-def is_collision(obj1, obj2):
-    s1 = obj1.size if hasattr(obj1, 'size') else [obj1.base_size[0]*obj1.scale_x, obj1.base_size[1]*obj1.scale_y, obj1.base_size[2]*obj1.scale_z]
-    s2 = obj2.size if hasattr(obj2, 'size') else [obj2.base_size[0]*obj2.scale_x, obj2.base_size[1]*obj2.scale_y, obj2.base_size[2]*obj2.scale_z]
+cpdef bint is_collision(GameObject obj1, GameObject obj2):
+    cdef float s1_w = obj1.base_w * obj1.scale_x
+    cdef float s1_h = obj1.base_h * obj1.scale_y
+    cdef float s1_d = obj1.base_d * obj1.scale_z
     
-    return (abs(obj1.x - obj2.x) * 2 < (s1[0] + s2[0])) and \
-           (abs(obj1.y - obj2.y) * 2 < (s1[1] + s2[1])) and \
-           (abs(obj1.z - obj2.z) * 2 < (s1[2] + s2[2]))
+    cdef float s2_w = obj2.base_w * obj2.scale_x
+    cdef float s2_h = obj2.base_h * obj2.scale_y
+    cdef float s2_d = obj2.base_d * obj2.scale_z
+    
+    return (fabsf(obj1.x - obj2.x) * 2.0 < (s1_w + s2_w)) and \
+           (fabsf(obj1.y - obj2.y) * 2.0 < (s1_h + s2_h)) and \
+           (fabsf(obj1.z - obj2.z) * 2.0 < (s1_d + s2_d))
+
 
 # ---           ДВИЖОК            ---
 
@@ -114,12 +142,13 @@ cdef class Engine:
         gles2.glUniformMatrix4fv(self.u_proj, 1, 0, &proj_view[0])
 
     def _create_white_texture(self):
-        data = np.array([255, 255, 255, 255], dtype=np.uint8)
-        t_id = glGenTextures(1)
+        cdef cnp.uint8_t[:] data_view = np.array([255, 255, 255, 255], dtype=np.uint8)
+        cdef unsigned int t_id
+        gles2.glGenTextures(1,&t_id)
         gles2.glBindTexture(gles2.GL_TEXTURE_2D, t_id)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, data)
+        gles2.glTexParameteri(gles2.GL_TEXTURE_2D, gles2.GL_TEXTURE_MIN_FILTER, gles2.GL_LINEAR)
+        gles2.glTexParameteri(gles2.GL_TEXTURE_2D, gles2.GL_TEXTURE_MAG_FILTER, gles2.GL_LINEAR)
+        gles2.glTexImage2D(gles2.GL_TEXTURE_2D, 0, gles2.GL_RGBA, 1, 1, 0, gles2.GL_RGBA, gles2.GL_UNSIGNED_BYTE, &data_view[0])
         return t_id
 
     def camera(self): return self._cam
@@ -142,21 +171,24 @@ cdef class Engine:
             gl_FragColor = texture2D(tex, v_uv) * vec4(v_col * diff, 1.0);
         }"""
         self.shader = compileProgram(compileShader(v_s, GL_VERTEX_SHADER), compileShader(f_s, GL_FRAGMENT_SHADER))
-        glUseProgram(self.shader)
+        gles2.glUseProgram(self.shader)
         self.u_proj = glGetUniformLocation(self.shader, "proj")
         self.u_view = glGetUniformLocation(self.shader, "view")
         self.u_model = glGetUniformLocation(self.shader, "model")
 
     def load_texture(self, path):
+        cdef unsigned int t_id
+        cdef const unsigned char[::1] pixel_view
         if not os.path.exists(path): return self.default_tex
         try:
             img = Image.open(path).transpose(Image.FLIP_TOP_BOTTOM).convert("RGBA")
-            t_id = glGenTextures(1)
+            gles2.glGenTextures(1,&t_id)
             gles2.glBindTexture(gles2.GL_TEXTURE_2D, t_id)
             # фильтрация для MAG_FILTER
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, img.width, img.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img.tobytes())
+            gles2.glTexParameteri(gles2.GL_TEXTURE_2D, gles2.GL_TEXTURE_MIN_FILTER, gles2.GL_LINEAR)
+            gles2.glTexParameteri(gles2.GL_TEXTURE_2D, gles2.GL_TEXTURE_MAG_FILTER, gles2.GL_LINEAR)
+            pixel_view = img.tobytes()
+            gles2.glTexImage2D(gles2.GL_TEXTURE_2D, 0, gles2.GL_RGBA, img.width, img.height, 0, gles2.GL_RGBA, gles2.GL_UNSIGNED_BYTE, &pixel_view[0])
             return t_id
         except:
             return self.default_tex
@@ -173,7 +205,7 @@ cdef class Engine:
             min_p[i] = INFINITY
             max_p[i] = -INFINITY
 
-        # Быстрое открытие файла
+
         cdef bytes fn_bytes = filename.encode('utf-8')
         cdef FILE* f = fopen(fn_bytes, "r")
         if f == NULL:
@@ -184,10 +216,9 @@ cdef class Engine:
         cdef float t1, t2, t3
         cdef vector[float] tmp
 
-        # Основной цикл парсинга (очень быстрый)
         while fgets(line, 512, f):
             if line[0] == 'v':
-                if line[1] == ' ': # Вершина
+                if line[1] == ' ':
                     sscanf(line, "v %f %f %f", &t1, &t2, &t3)
                     tmp = [t1, t2, t3]
                     v.push_back(tmp)
@@ -197,41 +228,37 @@ cdef class Engine:
                     if t2 > max_p[1]: max_p[1] = t2
                     if t3 < min_p[2]: min_p[2] = t3
                     if t3 > max_p[2]: max_p[2] = t3
-                elif line[1] == 't': # Текстура
+                elif line[1] == 't':
                     sscanf(line, "vt %f %f", &t1, &t2)
                     tmp = [t1, t2]
                     vt.push_back(tmp)
-                elif line[1] == 'n': # Нормаль
+                elif line[1] == 'n':
                     sscanf(line, "vn %f %f %f", &t1, &t2, &t3)
                     tmp = [t1, t2, t3]
                     vn.push_back(tmp)
 
             elif line[0] == 'f' and line[1] == ' ':
-                # Парсим грани, используя вспомогательную функцию
                 self._parse_face(line, v, vt, vn, final_v)
 
         fclose(f)
 
-        # Переводим вектор в NumPy массив для твоего PyOpenGL
-        # Это делается одной командой без лишнего копирования
+
         cdef float[:] view = <float[:final_v.size()]>&final_v[0]
         arr = np.array(view, dtype=np.float32)
 
-        # Возвращаемся к твоему привычному GL
+
         size = [max_p[0] - min_p[0], max_p[1] - min_p[1], max_p[2] - min_p[2]]
-        
-        vbo = glGenBuffers(1)
-        glBindBuffer(GL_ARRAY_BUFFER, vbo)
+        cdef unsigned int vbo
+        gles2.glGenBuffers(1,&vbo)
+        gles2.glBindBuffer(gles2.GL_ARRAY_BUFFER, vbo)
         glBufferData(GL_ARRAY_BUFFER, arr.nbytes, arr, GL_STATIC_DRAW)
         
-        # Возвращаем GameObject, как и раньше
-        # Подставь сюда свой класс GameObject
+
         return GameObject(vbo, len(final_v)//11, texture_id or self.default_tex, size)
 
     cdef void _parse_face(self, char* line, vector[vector[float]]& v, 
                          vector[vector[float]]& vt, vector[vector[float]]& vn, 
                          vector[float]& final_v):
-        # Оставляем удобный сплит, пока не решим ускорить его до максимума
         p_str = line.decode('utf-8').split()
         face_vertices = p_str[1:]
         
@@ -239,7 +266,6 @@ cdef class Engine:
             for v_str in face_vertices:
                 self._add_vertex_to_final(v_str, v, vt, vn, final_v)
         elif len(face_vertices) == 4:
-            # Триангуляция квадрата (1-2-3 и 1-3-4)
             v1_s, v2_s, v3_s, v4_s = face_vertices
             for s in [v1_s, v2_s, v3_s, v1_s, v3_s, v4_s]:
                 self._add_vertex_to_final(s, v, vt, vn, final_v)
@@ -252,19 +278,15 @@ cdef class Engine:
         cdef int t_idx = int(parts[1]) - 1 if len(parts) > 1 and parts[1] else -1
         cdef int n_idx = int(parts[2]) - 1 if len(parts) > 2 and parts[2] else -1
         
-        # Записываем все 11 компонентов (x, y, z, r, g, b, u, v, nx, ny, nz)
-        # Position
+
         final_v.push_back(v[v_idx][0])
         final_v.push_back(v[v_idx][1])
         final_v.push_back(v[v_idx][2])
-        # Color (белый)
         final_v.push_back(1.0); final_v.push_back(1.0); final_v.push_back(1.0)
-        # UV
         if t_idx != -1:
             final_v.push_back(vt[t_idx][0]); final_v.push_back(vt[t_idx][1])
         else:
             final_v.push_back(0); final_v.push_back(0)
-        # Normals
         if n_idx != -1:
             final_v.push_back(vn[n_idx][0]); final_v.push_back(vn[n_idx][1]); final_v.push_back(vn[n_idx][2])
         else:
@@ -280,7 +302,7 @@ cdef class Engine:
         glClearColor(*args)
     def draw(self, obj):
         if not obj: return
-        glUseProgram(self.shader)
+        gles2.glUseProgram(self.shader)
         s, c = math.sin(obj.angle), math.cos(obj.angle)
         model = np.array([
             c * obj.scale_x, 0, s * obj.scale_x, 0,
@@ -288,13 +310,15 @@ cdef class Engine:
             -s * obj.scale_z, 0, c * obj.scale_z, 0,
             obj.x, obj.y, obj.z, 1
         ], dtype=np.float32)
-        
-        glUniformMatrix4fv(self.u_model, 1, GL_FALSE, model)
+        cdef float[:] model_view = model.view(np.float32).flatten()
+        gles2.glUniformMatrix4fv(self.u_model, 1, gles2.GL_FALSE, &model_view[0])
         self.update_projection() 
-        glUniformMatrix4fv(self.u_view, 1, GL_FALSE, self._cam.get_view_matrix())
+        matrix = self._cam.get_view_matrix()
+        cdef float[:] matrix_view = matrix.view(np.float32).flatten()
+        gles2.glUniformMatrix4fv(self.u_view, 1, gles2.GL_FALSE, &matrix_view[0])
         
         
-        glBindBuffer(GL_ARRAY_BUFFER, obj.vbo)
+        gles2.glBindBuffer(gles2.GL_ARRAY_BUFFER, obj.vbo)
         for name, size, offset in [("pos",3,0), ("col",3,12), ("uv",2,24), ("norm",3,32)]:
             loc = glGetAttribLocation(self.shader, name)
             if loc != -1:
