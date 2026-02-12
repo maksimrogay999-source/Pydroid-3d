@@ -7,7 +7,7 @@ if __name__ == "__main__":
         
     tex = core.load_texture("tex.png")
     box = core.load_obj("box.obj", tex)
-
+    box.z=-30
     running = True
     while running:
         core.ScreenColor(0.1, 0.1, 0.15, 1.0)

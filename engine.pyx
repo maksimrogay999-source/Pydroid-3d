@@ -3,6 +3,10 @@ import sdl2, sdl2.ext
 import numpy as np
 import math
 from PIL import Image
+cimport numpy as cnp
+from libcpp.vector cimport vector
+from libc.stdio cimport fopen, fclose, FILE, fgets, sscanf
+from libc.math cimport INFINITY
 
 # --- Настройки OpenGL для Pydroid3 -
 os.environ['PYOPENGL_PLATFORM'] = 'egl'
@@ -157,61 +161,115 @@ cdef class Engine:
         except:
             return self.default_tex
 
-    def load_obj(self, filename, texture_id=None):
-        v, vt, vn, final_v = [], [], [], []
-        min_p = [float('inf')]*3; max_p = [float('-inf')]*3
-        try:
-            with open(filename, 'r') as f:
-                for line in f:
-                    p = line.split()
-                    if not p: continue
-                    if p[0] == 'v':
-                        pts = list(map(float, p[1:4]))
-                        v.append(pts)
-                        for i in range(3):
-                            min_p[i] = min(min_p[i], pts[i]); max_p[i] = max(max_p[i], pts[i])
-                    elif p[0] == 'vt': vt.append(list(map(float, p[1:3])))
-                    elif p[0] == 'vn': vn.append(list(map(float, p[1:4])))
-                    elif p[0] == 'f':
-                        face_vertices = p[1:]
-                        
-                        
-                        def parse_vertex(vert_str):
-                            parts = vert_str.split('/')
-                            v_idx = int(parts[0]) - 1
-                            t_idx = int(parts[1]) - 1 if len(parts) > 1 and parts[1] else -1
-                            n_idx = int(parts[2]) - 1 if len(parts) > 2 and parts[2] else -1
-                            
-                            p_d = v[v_idx]
-                            u_d = vt[t_idx] if t_idx != -1 else [0, 0]
-                            n_d = vn[n_idx] if n_idx != -1 else [0, 1, 0]
-                            return [p_d[0], p_d[1], p_d[2], 1, 1, 1, u_d[0], u_d[1], n_d[0], n_d[1], n_d[2]]
+    cpdef load_obj(self, filename, texture_id=None):
+        cdef vector[vector[float]] v
+        cdef vector[vector[float]] vt
+        cdef vector[vector[float]] vn
+        cdef vector[float] final_v
+        
+        cdef float min_p[3]
+        cdef float max_p[3]
+        for i in range(3):
+            min_p[i] = INFINITY
+            max_p[i] = -INFINITY
 
-
-                        if len(face_vertices) == 3:
-                            for v_str in face_vertices:
-                                final_v.extend(parse_vertex(v_str))
-                        
-
-                        elif len(face_vertices) == 4:
-                            v1 = parse_vertex(face_vertices[0])
-                            v2 = parse_vertex(face_vertices[1])
-                            v3 = parse_vertex(face_vertices[2])
-                            v4 = parse_vertex(face_vertices[3])
-                            
-                            final_v.extend(v1 + v2 + v3)
-                            final_v.extend(v1 + v3 + v4)
-
-            
-            size = [max_p[i] - min_p[i] for i in range(3)]
-            vbo = glGenBuffers(1)
-            glBindBuffer(GL_ARRAY_BUFFER, vbo)
-            arr = np.array(final_v, dtype=np.float32)
-            glBufferData(GL_ARRAY_BUFFER, arr.nbytes, arr, GL_STATIC_DRAW)
-            return GameObject(vbo, len(final_v)//11, texture_id or self.default_tex, size)
-        except Exception as e:
-            print(f"Error loading OBJ: {e}")
+        # Быстрое открытие файла
+        cdef bytes fn_bytes = filename.encode('utf-8')
+        cdef FILE* f = fopen(fn_bytes, "r")
+        if f == NULL:
+            print(f"Error: Could not open {filename}")
             return None
+
+        cdef char line[512]
+        cdef float t1, t2, t3
+        cdef vector[float] tmp
+
+        # Основной цикл парсинга (очень быстрый)
+        while fgets(line, 512, f):
+            if line[0] == 'v':
+                if line[1] == ' ': # Вершина
+                    sscanf(line, "v %f %f %f", &t1, &t2, &t3)
+                    tmp = [t1, t2, t3]
+                    v.push_back(tmp)
+                    if t1 < min_p[0]: min_p[0] = t1
+                    if t1 > max_p[0]: max_p[0] = t1
+                    if t2 < min_p[1]: min_p[1] = t2
+                    if t2 > max_p[1]: max_p[1] = t2
+                    if t3 < min_p[2]: min_p[2] = t3
+                    if t3 > max_p[2]: max_p[2] = t3
+                elif line[1] == 't': # Текстура
+                    sscanf(line, "vt %f %f", &t1, &t2)
+                    tmp = [t1, t2]
+                    vt.push_back(tmp)
+                elif line[1] == 'n': # Нормаль
+                    sscanf(line, "vn %f %f %f", &t1, &t2, &t3)
+                    tmp = [t1, t2, t3]
+                    vn.push_back(tmp)
+
+            elif line[0] == 'f' and line[1] == ' ':
+                # Парсим грани, используя вспомогательную функцию
+                self._parse_face(line, v, vt, vn, final_v)
+
+        fclose(f)
+
+        # Переводим вектор в NumPy массив для твоего PyOpenGL
+        # Это делается одной командой без лишнего копирования
+        cdef float[:] view = <float[:final_v.size()]>&final_v[0]
+        arr = np.array(view, dtype=np.float32)
+
+        # Возвращаемся к твоему привычному GL
+        size = [max_p[0] - min_p[0], max_p[1] - min_p[1], max_p[2] - min_p[2]]
+        
+        vbo = glGenBuffers(1)
+        glBindBuffer(GL_ARRAY_BUFFER, vbo)
+        glBufferData(GL_ARRAY_BUFFER, arr.nbytes, arr, GL_STATIC_DRAW)
+        
+        # Возвращаем GameObject, как и раньше
+        # Подставь сюда свой класс GameObject
+        return GameObject(vbo, len(final_v)//11, texture_id or self.default_tex, size)
+
+    cdef void _parse_face(self, char* line, vector[vector[float]]& v, 
+                         vector[vector[float]]& vt, vector[vector[float]]& vn, 
+                         vector[float]& final_v):
+        # Оставляем удобный сплит, пока не решим ускорить его до максимума
+        p_str = line.decode('utf-8').split()
+        face_vertices = p_str[1:]
+        
+        if len(face_vertices) == 3:
+            for v_str in face_vertices:
+                self._add_vertex_to_final(v_str, v, vt, vn, final_v)
+        elif len(face_vertices) == 4:
+            # Триангуляция квадрата (1-2-3 и 1-3-4)
+            v1_s, v2_s, v3_s, v4_s = face_vertices
+            for s in [v1_s, v2_s, v3_s, v1_s, v3_s, v4_s]:
+                self._add_vertex_to_final(s, v, vt, vn, final_v)
+
+    cdef void _add_vertex_to_final(self, str v_str, vector[vector[float]]& v, 
+                                 vector[vector[float]]& vt, vector[vector[float]]& vn, 
+                                 vector[float]& final_v):
+        parts = v_str.split('/')
+        cdef int v_idx = int(parts[0]) - 1
+        cdef int t_idx = int(parts[1]) - 1 if len(parts) > 1 and parts[1] else -1
+        cdef int n_idx = int(parts[2]) - 1 if len(parts) > 2 and parts[2] else -1
+        
+        # Записываем все 11 компонентов (x, y, z, r, g, b, u, v, nx, ny, nz)
+        # Position
+        final_v.push_back(v[v_idx][0])
+        final_v.push_back(v[v_idx][1])
+        final_v.push_back(v[v_idx][2])
+        # Color (белый)
+        final_v.push_back(1.0); final_v.push_back(1.0); final_v.push_back(1.0)
+        # UV
+        if t_idx != -1:
+            final_v.push_back(vt[t_idx][0]); final_v.push_back(vt[t_idx][1])
+        else:
+            final_v.push_back(0); final_v.push_back(0)
+        # Normals
+        if n_idx != -1:
+            final_v.push_back(vn[n_idx][0]); final_v.push_back(vn[n_idx][1]); final_v.push_back(vn[n_idx][2])
+        else:
+            final_v.push_back(0); final_v.push_back(1.0); final_v.push_back(0)
+
     def wait(self,sec):
         sdl2.SDL_Delay(sec)
     def main(self):
