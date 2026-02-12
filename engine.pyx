@@ -3,21 +3,33 @@ import sdl2, sdl2.ext
 import numpy as np
 import math
 from PIL import Image
-cimport numpy as cnp
 from libcpp.vector cimport vector
 from libc.stdio cimport fopen, fclose, FILE, fgets, sscanf
-cimport cython
+from libc.stdint cimport uintptr_t
 from libc.math cimport INFINITY,fabsf
-
-# --- Настройки OpenGL для Pydroid3 -
-os.environ['PYOPENGL_PLATFORM'] = 'egl'
-try:
-    ctypes.CDLL('libGLESv2.so', mode=ctypes.RTLD_GLOBAL)
-except:
-    pass
 cimport gles2
-from OpenGL.GL import *
-from OpenGL.GL.shaders import compileProgram, compileShader
+cimport cython
+cimport numpy as cnp
+
+cpdef unsigned int load_shaders(str v_code, str f_code):
+    v_bytes = v_code.encode('utf-8')
+    f_bytes = f_code.encode('utf-8')
+    cdef const char* vs_c = v_bytes
+    cdef const char* fs_c = f_bytes
+    cdef unsigned int vs, fs, prog
+    vs = gles2.glCreateShader(gles2.GL_VERTEX_SHADER)
+    gles2.glShaderSource(vs, 1, &vs_c, NULL)
+    gles2.glCompileShader(vs)
+    fs = gles2.glCreateShader(gles2.GL_FRAGMENT_SHADER)
+    gles2.glShaderSource(fs, 1, &fs_c, NULL)
+    gles2.glCompileShader(fs)
+    prog = gles2.glCreateProgram()
+    gles2.glAttachShader(prog, vs)
+    gles2.glAttachShader(prog, fs)
+    gles2.glLinkProgram(prog)
+    
+    return prog
+
 
 class Camera:
     def __init__(self):
@@ -141,7 +153,7 @@ cdef class Engine:
         gles2.glUseProgram(self.shader)
         gles2.glUniformMatrix4fv(self.u_proj, 1, 0, &proj_view[0])
 
-    def _create_white_texture(self):
+    cpdef _create_white_texture(self):
         cdef cnp.uint8_t[:] data_view = np.array([255, 255, 255, 255], dtype=np.uint8)
         cdef unsigned int t_id
         gles2.glGenTextures(1,&t_id)
@@ -151,9 +163,9 @@ cdef class Engine:
         gles2.glTexImage2D(gles2.GL_TEXTURE_2D, 0, gles2.GL_RGBA, 1, 1, 0, gles2.GL_RGBA, gles2.GL_UNSIGNED_BYTE, &data_view[0])
         return t_id
 
-    def camera(self): return self._cam
+    cpdef camera(self): return self._cam
 
-    def _init_shaders(self):
+    cpdef _init_shaders(self):
         v_s = """
         attribute vec3 pos; attribute vec3 col; attribute vec2 uv; attribute vec3 norm;
         varying vec3 v_col; varying vec2 v_uv; varying vec3 v_norm;
@@ -170,13 +182,13 @@ cdef class Engine:
             float diff = max(dot(normalize(v_norm), light), 0.25);
             gl_FragColor = texture2D(tex, v_uv) * vec4(v_col * diff, 1.0);
         }"""
-        self.shader = compileProgram(compileShader(v_s, GL_VERTEX_SHADER), compileShader(f_s, GL_FRAGMENT_SHADER))
+        self.shader = load_shaders(v_s,f_s)
         gles2.glUseProgram(self.shader)
-        self.u_proj = glGetUniformLocation(self.shader, "proj")
-        self.u_view = glGetUniformLocation(self.shader, "view")
-        self.u_model = glGetUniformLocation(self.shader, "model")
+        self.u_proj = gles2.glGetUniformLocation(self.shader, "proj")
+        self.u_view = gles2.glGetUniformLocation(self.shader, "view")
+        self.u_model = gles2.glGetUniformLocation(self.shader, "model")
 
-    def load_texture(self, path):
+    cpdef load_texture(self, path):
         cdef unsigned int t_id
         cdef const unsigned char[::1] pixel_view
         if not os.path.exists(path): return self.default_tex
@@ -241,17 +253,20 @@ cdef class Engine:
                 self._parse_face(line, v, vt, vn, final_v)
 
         fclose(f)
-
-
-        cdef float[:] view = <float[:final_v.size()]>&final_v[0]
-        arr = np.array(view, dtype=np.float32)
-
-
         size = [max_p[0] - min_p[0], max_p[1] - min_p[1], max_p[2] - min_p[2]]
+
+
         cdef unsigned int vbo
-        gles2.glGenBuffers(1,&vbo)
+        gles2.glGenBuffers(1, &vbo)
         gles2.glBindBuffer(gles2.GL_ARRAY_BUFFER, vbo)
-        glBufferData(GL_ARRAY_BUFFER, arr.nbytes, arr, GL_STATIC_DRAW)
+        cdef size_t buffer_size = final_v.size() * sizeof(float)
+        gles2.glBufferData(
+            gles2.GL_ARRAY_BUFFER, 
+            buffer_size, 
+            &final_v[0], 
+            gles2.GL_STATIC_DRAW
+        )
+
         
 
         return GameObject(vbo, len(final_v)//11, texture_id or self.default_tex, size)
@@ -292,15 +307,16 @@ cdef class Engine:
         else:
             final_v.push_back(0); final_v.push_back(1.0); final_v.push_back(0)
 
-    def wait(self,sec):
+    cpdef wait(self,sec):
         sdl2.SDL_Delay(sec)
-    def main(self):
+    cpdef main(self):
          sdl2.SDL_GL_SwapWindow(self.window.window)
-    def ScreenClear(self):
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-    def ScreenColor(self,*args):
-        glClearColor(*args)
-    def draw(self, obj):
+    cpdef ScreenClear(self):
+        gles2.glClear(gles2.GL_COLOR_BUFFER_BIT | gles2.GL_DEPTH_BUFFER_BIT)
+    cpdef ScreenColor(self, float r, float g, float b, float a=1.0):
+        gles2.glClearColor(r, g, b, a)
+
+    cpdef draw(self, obj):
         if not obj: return
         gles2.glUseProgram(self.shader)
         s, c = math.sin(obj.angle), math.cos(obj.angle)
@@ -320,10 +336,11 @@ cdef class Engine:
         
         gles2.glBindBuffer(gles2.GL_ARRAY_BUFFER, obj.vbo)
         for name, size, offset in [("pos",3,0), ("col",3,12), ("uv",2,24), ("norm",3,32)]:
-            loc = glGetAttribLocation(self.shader, name)
+            name_bytes = name.encode('utf-8') 
+            loc = gles2.glGetAttribLocation(self.shader, name_bytes)
             if loc != -1:
-                glEnableVertexAttribArray(loc)
-                glVertexAttribPointer(loc, size, GL_FLOAT, GL_FALSE, 44, ctypes.c_void_p(offset))
+                gles2.glEnableVertexAttribArray(loc)
+                gles2.glVertexAttribPointer(loc, size, gles2.GL_FLOAT, gles2.GL_FALSE, 44, <const void*><uintptr_t>offset)
         
         gles2.glBindTexture(gles2.GL_TEXTURE_2D, obj.texture_id)
-        glDrawArrays(GL_TRIANGLES, 0, obj.count)
+        gles2.glDrawArrays(gles2.GL_TRIANGLES, 0, obj.count)
