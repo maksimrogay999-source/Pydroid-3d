@@ -1,7 +1,7 @@
 import os, ctypes, sys
 import sdl2, sdl2.ext
 import numpy as np
-import math
+import math,time
 from PIL import Image
 from libcpp.vector cimport vector
 from libc.stdio cimport fopen, fclose, FILE, fgets, sscanf
@@ -85,7 +85,6 @@ cdef class FBO:
             gles2.glBindFramebuffer(gles2.GL_FRAMEBUFFER, self.id)
             gles2.glReadPixels(0, 0, self.width, self.height, gles2.GL_RGBA, gles2.GL_UNSIGNED_BYTE, data)
             img_bytes = (<char*>data)[:size]
-            # OpenGL читает снизу вверх поэтому нужно перевернуть
             img = Image.frombytes("RGBA", (self.width, self.height), img_bytes)
             img = img.transpose(Image.FLIP_TOP_BOTTOM)
             img.save(filename)
@@ -99,9 +98,9 @@ cdef class FBO:
 class Camera:
     def __init__(self):
         self.x, self.y, self.z = 0.0, 0.0, 5.0
-        self.pitch = 0.0 # Наклон головы
-        self.yaw = -math.pi/2 # Поворот головы
-        self.size = [0.8, 1.8, 0.8] # Хитбокс игрока
+        self.pitch = 0.0
+        self.yaw = -math.pi/2
+        self.size = [0.8, 1.8, 0.8]
 
     def get_view_matrix(self):
         cos_p = math.cos(self.pitch); sin_p = math.sin(self.pitch)
@@ -185,13 +184,20 @@ cdef class Engine:
 
     cdef int width
     cdef int height
+    
+    cdef long last
+    cdef double dt
 
     def __init__(self, width=1080, height=1920):
+        self.dt = 0
+        self.last = time.perf_counter_ns()
         sdl2.ext.init()
         self.window = sdl2.ext.Window("3D Engine v11", size=(width, height), flags=sdl2.SDL_WINDOW_OPENGL)
         self.window.show()
         self.context = sdl2.SDL_GL_CreateContext(self.window.window)
         gles2.glEnable(gles2.GL_DEPTH_TEST)
+        gles2.glEnable(gles2.GL_BLEND)
+        gles2.glBlendFunc(gles2.GL_SRC_ALPHA, gles2.GL_ONE_MINUS_SRC_ALPHA)
         
         self.width = width
         self.height = height
@@ -396,11 +402,15 @@ void main() {
             final_v.push_back(vn[n_idx][0]); final_v.push_back(vn[n_idx][1]); final_v.push_back(vn[n_idx][2])
         else:
             final_v.push_back(0); final_v.push_back(1.0); final_v.push_back(0)
-
+    cpdef get_dt(self):
+        return self.dt
     cpdef wait(self,sec):
         sdl2.SDL_Delay(sec)
     cpdef main(self):
          sdl2.SDL_GL_SwapWindow(self.window.window)
+         cdef long time_c = time.perf_counter_ns()
+         self.dt = (time_c - self.last) / 1e9
+         self.last = time_c
     cpdef ScreenClear(self):
         gles2.glClear(gles2.GL_COLOR_BUFFER_BIT | gles2.GL_DEPTH_BUFFER_BIT)
     cpdef ScreenColor(self, float r, float g, float b, float a=1.0):
@@ -435,6 +445,7 @@ void main() {
         
         gles2.glBindTexture(gles2.GL_TEXTURE_2D, obj.texture_id)
         gles2.glDrawArrays(gles2.GL_TRIANGLES, 0, obj.count)
+
     cpdef draw_gui(self, unsigned int texture_id, float x, float y, float w, float h):
         cdef float sw = <float>self.width
         cdef float sh = <float>self.height

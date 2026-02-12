@@ -13,10 +13,11 @@
 - Сохранение fbo в png файл.
 
 ## Установка в Pydroid3
-1. Установите пакеты: `pip install pysdl2 pillow numpy`
-2. Скопируйте репозиторий
-3. Установите модуль: `python build.py`
-4. Запустите `example.py`
+1. Установите `pydroid permissions plugin`
+2. Установите пакеты: `pip install pysdl2 pillow numpy`
+3. Скопируйте репозиторий
+4. Установите модуль: `python build.py`
+5. Запустите `example.py`
 
 ## Пример
 ```python

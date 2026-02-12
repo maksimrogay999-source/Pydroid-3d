@@ -21,10 +21,16 @@ cdef extern from "<GLES2/gl2.h>":
     unsigned int GL_RENDERBUFFER
     unsigned int GL_DEPTH_COMPONENT16
     unsigned int GL_DEPTH_ATTACHMENT
+    unsigned int GL_BLEND
+    unsigned int GL_SRC_ALPHA
+    unsigned int GL_ONE_MINUS_SRC_ALPHA
+    unsigned int GL_ONE
+    unsigned int GL_ZERO
 
 
 
-
+    void glBlendFunc(int sfactor, int dfactor)
+    void glDepthMask(unsigned char flag) 
     void glEnable(unsigned int cap)
     void glDisable(unsigned int cap)
     void glUseProgram(unsigned int program)
