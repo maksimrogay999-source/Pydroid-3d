@@ -4,10 +4,11 @@
 [✔️] Загрузка текстур 
 [❌] Поддержка libfreetype
 [✔️] Alpha Blensing (Не тестировалось)
-[❌] Убрать зависимости от python sdl2
-[✔️] Убрать зависимости от python opengl
-[❌] Загрузка своих шейдеров
+[✔️] Перейти с python sdl2 на чистый sdl2
+[✔️] Перейти с python opengl на чистый opengles2
+[❌] Загрузка пользовательских шейдеров
 [❌] Материалы
 [❌] Input System
 [❌] Rotate screen
 [✔️] Delta time
+[✔️] AABB

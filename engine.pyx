@@ -1,5 +1,4 @@
 import os, ctypes, sys
-import sdl2, sdl2.ext
 import numpy as np
 import math,time
 from PIL import Image
@@ -8,6 +7,7 @@ from libc.stdio cimport fopen, fclose, FILE, fgets, sscanf
 from libc.stdint cimport uintptr_t
 from libc.math cimport INFINITY,fabsf
 cimport gles2
+cimport sdl
 cimport cython
 cimport numpy as cnp
 
@@ -170,8 +170,8 @@ cpdef bint is_collision(GameObject obj1, GameObject obj2):
 # ---           ДВИЖОК            ---
 
 cdef class Engine:
-    cdef object window
-    cdef object context
+    cdef sdl.SDL_Window* window
+    cdef sdl.SDL_GLContext context
     cdef object _cam
     cdef unsigned int default_tex
     
@@ -191,10 +191,10 @@ cdef class Engine:
     def __init__(self, width=1080, height=1920):
         self.dt = 0
         self.last = time.perf_counter_ns()
-        sdl2.ext.init()
-        self.window = sdl2.ext.Window("3D Engine v11", size=(width, height), flags=sdl2.SDL_WINDOW_OPENGL)
-        self.window.show()
-        self.context = sdl2.SDL_GL_CreateContext(self.window.window)
+        sdl.SDL_Init(sdl.SDL_INIT_EVERYTHING)
+        self.window = sdl.SDL_CreateWindow("3D Engine v11", 0,0,width, height, sdl.SDL_WINDOW_OPENGL)
+        sdl.SDL_ShowWindow(self.window)
+        self.context = sdl.SDL_GL_CreateContext(self.window)
         gles2.glEnable(gles2.GL_DEPTH_TEST)
         gles2.glEnable(gles2.GL_BLEND)
         gles2.glBlendFunc(gles2.GL_SRC_ALPHA, gles2.GL_ONE_MINUS_SRC_ALPHA)
@@ -405,9 +405,9 @@ void main() {
     cpdef get_dt(self):
         return self.dt
     cpdef wait(self,sec):
-        sdl2.SDL_Delay(sec)
+        sdl.SDL_Delay(sec*1000)
     cpdef main(self):
-         sdl2.SDL_GL_SwapWindow(self.window.window)
+         sdl.SDL_GL_SwapWindow(self.window)
          cdef long time_c = time.perf_counter_ns()
          self.dt = (time_c - self.last) / 1e9
          self.last = time_c
