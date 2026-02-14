@@ -117,9 +117,7 @@ class Camera:
                        -np.dot(yaxis, [self.x, self.y, self.z]),
                        -np.dot(zaxis, [self.x, self.y, self.z])]
         return view.T
-
-
-
+        
 cdef class GameObject:
     cdef public float x, y, z
     cdef public float scale_x, scale_y, scale_z
@@ -168,18 +166,26 @@ cpdef bint is_collision(GameObject obj1, GameObject obj2):
 
 
 # ---           ДВИЖОК            ---
+cdef class Sun:
+    cdef public double x,y,z
+    def __init__(self):
+        self.x = 1.0
+        self.y= 2.0
+        self.z = 1.0
 
 cdef class Engine:
     cdef sdl.SDL_Window* window
     cdef sdl.SDL_GLContext context
     cdef object _cam
     cdef unsigned int default_tex
+    cdef public object sun
     
     cdef unsigned int shader
     cdef unsigned int gui_shader
     cdef int u_proj
     cdef int u_view
     cdef int u_model
+    cdef int u_lightpos
     
 
     cdef int width
@@ -191,6 +197,7 @@ cdef class Engine:
     def __init__(self, width=1080, height=1920):
         self.dt = 0
         self.last = time.perf_counter_ns()
+        self.sun = Sun()
         sdl.SDL_Init(sdl.SDL_INIT_EVERYTHING)
         self.window = sdl.SDL_CreateWindow("3D Engine v11", 0,0,width, height, sdl.SDL_WINDOW_OPENGL)
         sdl.SDL_ShowWindow(self.window)
@@ -249,8 +256,9 @@ cdef class Engine:
         f_s = """
         precision mediump float; varying vec3 v_col; varying vec2 v_uv; varying vec3 v_norm;
         uniform sampler2D tex;
+        uniform vec3 u_lightPos;
         void main() {
-            vec3 light = normalize(vec3(1.0, 2.0, 1.0));
+            vec3 light = normalize(vec3(u_lightPos));
             float diff = max(dot(normalize(v_norm), light), 0.25);
             gl_FragColor = texture2D(tex, v_uv) * vec4(v_col * diff, 1.0);
         }"""
@@ -259,6 +267,7 @@ cdef class Engine:
         self.u_proj = gles2.glGetUniformLocation(self.shader, "proj")
         self.u_view = gles2.glGetUniformLocation(self.shader, "view")
         self.u_model = gles2.glGetUniformLocation(self.shader, "model")
+        self.u_lightpos = gles2.glGetUniformLocation(self.shader, "u_lightPos")
         cdef str v_code = """
 attribute vec2 position;
 attribute vec2 texCoord;
@@ -433,7 +442,7 @@ void main() {
         matrix = self._cam.get_view_matrix()
         cdef float[:] matrix_view = matrix.view(np.float32).flatten()
         gles2.glUniformMatrix4fv(self.u_view, 1, gles2.GL_FALSE, &matrix_view[0])
-        
+        gles2.glUniform3f(self.u_lightpos, self.sun.x, self.sun.y, self.sun.z)
         
         gles2.glBindBuffer(gles2.GL_ARRAY_BUFFER, obj.vbo)
         for name, size, offset in [("pos",3,0), ("col",3,12), ("uv",2,24), ("norm",3,32)]:

@@ -19,6 +19,7 @@ if __name__ == "__main__":
 
     running = True
     fb = FBO(1224,2449)
+    core.sun.x -= 10
     while running:
         fb.bind()
         core.ScreenColor(0.1, 0.1, 0.15, 1.0)

@@ -70,3 +70,4 @@ cdef extern from "<GLES2/gl2.h>":
     void glRenderbufferStorage(unsigned int target, unsigned int internalformat, int width, int height)
     void glFramebufferRenderbuffer(unsigned int target, unsigned int attachment, unsigned int renderbuffertarget, unsigned int renderbuffer)
     void glUniform1i(int location, int v0)
+    void glUniform3f(int location, float v0,float v1, float v2)
