@@ -16,7 +16,7 @@
 1. Установите `pydroid permissions plugin`
 2. Установите пакеты: `pip install pysdl2 pillow numpy`
 3. Скопируйте репозиторий
-4. Установите модуль: `python build.py`
+4. Установите модуль: `cd source & python build.py`
 5. Запустите `example.py`
 
 ## Пример
