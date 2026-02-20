@@ -14,5 +14,5 @@
 [✔️] AABB
 [✔️❌] Разбить engine.pyx на engine.pyx и render/OpenGles2.pyx
 [❌] Добавить vulkan
-[✔️] Перейти с чистого gles2 на cffi
+[✔️] Перейти с чистого gles2 на cffi (-10 фпс)
 [✔️] Оптимизации 50 фпс на 500 кубов

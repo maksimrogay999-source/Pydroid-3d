@@ -6,31 +6,13 @@ from libcpp.vector cimport vector
 from libc.stdio cimport fopen, fclose, FILE, fgets, sscanf
 from libc.stdint cimport uintptr_t
 from libc.math cimport INFINITY,fabsf
-cimport gles2
+import glRender as render
+ffi = render.ffi
 cimport sdl
 cimport cython
 cimport numpy as cnp
-
-cpdef unsigned int load_shaders(str v_code, str f_code):
-    v_bytes = v_code.encode('utf-8')
-    f_bytes = f_code.encode('utf-8')
-    cdef const char* vs_c = v_bytes
-    cdef const char* fs_c = f_bytes
-    cdef unsigned int vs, fs, prog
-    vs = gles2.glCreateShader(gles2.GL_VERTEX_SHADER)
-    gles2.glShaderSource(vs, 1, &vs_c, NULL)
-    gles2.glCompileShader(vs)
-    fs = gles2.glCreateShader(gles2.GL_FRAGMENT_SHADER)
-    gles2.glShaderSource(fs, 1, &fs_c, NULL)
-    gles2.glCompileShader(fs)
-    prog = gles2.glCreateProgram()
-    gles2.glAttachShader(prog, vs)
-    gles2.glAttachShader(prog, fs)
-    gles2.glLinkProgram(prog)
-    
-    return prog
-
 from libc.stdlib cimport malloc, free
+
 
 cdef class FBO:
     cdef public unsigned int id
@@ -41,49 +23,49 @@ cdef class FBO:
     def __init__(self, int width, int height):
         self.width = width
         self.height = height
-        gles2.glGenTextures(1, &self.texture)
-        gles2.glBindTexture(gles2.GL_TEXTURE_2D, self.texture)
-        gles2.glTexImage2D(gles2.GL_TEXTURE_2D, 0, gles2.GL_RGBA, 
-                           width, height, 0, gles2.GL_RGBA, 
-                           gles2.GL_UNSIGNED_BYTE, NULL)
-        gles2.glTexParameteri(gles2.GL_TEXTURE_2D, gles2.GL_TEXTURE_MIN_FILTER, gles2.GL_LINEAR)
-        gles2.glTexParameteri(gles2.GL_TEXTURE_2D, gles2.GL_TEXTURE_MAG_FILTER, gles2.GL_LINEAR)
-        gles2.glGenFramebuffers(1, &self.id)
-        gles2.glBindFramebuffer(gles2.GL_FRAMEBUFFER, self.id)
-        gles2.glFramebufferTexture2D(gles2.GL_FRAMEBUFFER, gles2.GL_COLOR_ATTACHMENT0, 
-                                     gles2.GL_TEXTURE_2D, self.texture, 0)
-        gles2.glGenRenderbuffers(1, &self.rbo)
-        gles2.glBindRenderbuffer(gles2.GL_RENDERBUFFER, self.rbo)
-        gles2.glRenderbufferStorage(gles2.GL_RENDERBUFFER, gles2.GL_DEPTH_COMPONENT16, width, height)
-        gles2.glFramebufferRenderbuffer(gles2.GL_FRAMEBUFFER, gles2.GL_DEPTH_ATTACHMENT, 
-                                        gles2.GL_RENDERBUFFER, self.rbo)
+        render.glGenTextures(1, ffi.cast("GLuint *",<uintptr_t>&self.texture))
+        render.glBindTexture(render.GL_TEXTURE_2D, self.texture)
+        render.glTexImage2D(render.GL_TEXTURE_2D, 0, render.GL_RGBA, 
+                           width, height, 0, render.GL_RGBA, 
+                           render.GL_UNSIGNED_BYTE, ffi.NULL)
+        render.glTexParameteri(render.GL_TEXTURE_2D, render.GL_TEXTURE_MIN_FILTER, render.GL_LINEAR)
+        render.glTexParameteri(render.GL_TEXTURE_2D, render.GL_TEXTURE_MAG_FILTER, render.GL_LINEAR)
+        render.glGenFramebuffers(1, ffi.cast("GLuint *",<uintptr_t>&self.id))
+        render.glBindFramebuffer(render.GL_FRAMEBUFFER, self.id)
+        render.glFramebufferTexture2D(render.GL_FRAMEBUFFER, render.GL_COLOR_ATTACHMENT0, 
+                                     render.GL_TEXTURE_2D, self.texture, 0)
+        render.glGenRenderbuffers(1, ffi.cast("GLuint *", <uintptr_t>&self.rbo))
+        render.glBindRenderbuffer(render.GL_RENDERBUFFER, self.rbo)
+        render.glRenderbufferStorage(render.GL_RENDERBUFFER, render.GL_DEPTH_COMPONENT16, width, height)
+        render.glFramebufferRenderbuffer(render.GL_FRAMEBUFFER, render.GL_DEPTH_ATTACHMENT, 
+                                        render.GL_RENDERBUFFER, self.rbo)
 
-        if gles2.glCheckFramebufferStatus(gles2.GL_FRAMEBUFFER) != gles2.GL_FRAMEBUFFER_COMPLETE:
+        if render.glCheckFramebufferStatus(render.GL_FRAMEBUFFER) != render.GL_FRAMEBUFFER_COMPLETE:
             print("Ошибка: FBO не укомплектован!")
 
-        gles2.glBindFramebuffer(gles2.GL_FRAMEBUFFER, 0)
+        render.glBindFramebuffer(render.GL_FRAMEBUFFER, 0)
 
 
     cpdef bind(self):
-        gles2.glBindFramebuffer(gles2.GL_FRAMEBUFFER, self.id)
+        render.glBindFramebuffer(render.GL_FRAMEBUFFER, self.id)
 
-        gles2.glViewport(0, 0, self.width, self.height)
+        render.glViewport(0, 0, self.width, self.height)
 
     cpdef unbind(self, int screen_w, int screen_h):
 
-        gles2.glBindFramebuffer(gles2.GL_FRAMEBUFFER, 0)
+        render.glBindFramebuffer(render.GL_FRAMEBUFFER, 0)
 
-        gles2.glViewport(0, 0, screen_w, screen_h)
+        render.glViewport(0, 0, screen_w, screen_h)
 
     def __dealloc__(self):
-        gles2.glDeleteFramebuffers(1, &self.id)
+        render.glDeleteFramebuffers(1, ffi.cast("GLuint *",<uintptr_t>&self.id))
     cpdef save_screenshot(self, str filename):
         cdef int size = self.width * self.height * 4
         cdef unsigned char* data = <unsigned char*>malloc(size)
     
         try:
-            gles2.glBindFramebuffer(gles2.GL_FRAMEBUFFER, self.id)
-            gles2.glReadPixels(0, 0, self.width, self.height, gles2.GL_RGBA, gles2.GL_UNSIGNED_BYTE, data)
+            render.glBindFramebuffer(render.GL_FRAMEBUFFER, self.id)
+            render.glReadPixels(0, 0, self.width, self.height, render.GL_RGBA, render.GL_UNSIGNED_BYTE, data)
             img_bytes = (<char*>data)[:size]
             img = Image.frombytes("RGBA", (self.width, self.height), img_bytes)
             img = img.transpose(Image.FLIP_TOP_BOTTOM)
@@ -92,31 +74,84 @@ cdef class FBO:
         
         finally:
             free(data)
-            gles2.glBindFramebuffer(gles2.GL_FRAMEBUFFER, 0)
+            render.glBindFramebuffer(render.GL_FRAMEBUFFER, 0)
 
 
-class Camera:
+from libc.math cimport cos, sin, sqrt
+
+cdef class Camera:
+    cdef public double x, y, z, pitch, yaw
+    cdef public float size[3]
+    
     def __init__(self):
-        self.x, self.y, self.z = 0.0, 0.0, 5.0
+        self.x = 0.0
+        self.y = 0.0
+        self.z = 5.0
         self.pitch = 0.0
-        self.yaw = -math.pi/2
-        self.size = [0.8, 1.8, 0.8]
+        self.yaw = -3.141592653589793 / 2 
+        self.size[0] = 0.8
+        self.size[1] = 1.8
+        self.size[2] = 0.8
+    
+    cpdef get_view_matrix(self):
+        cdef double cos_p = cos(self.pitch)
+        cdef double sin_p = sin(self.pitch)
+        cdef double cos_y = cos(self.yaw)
+        cdef double sin_y = sin(self.yaw)
 
-    def get_view_matrix(self):
-        cos_p = math.cos(self.pitch); sin_p = math.sin(self.pitch)
-        cos_y = math.cos(self.yaw); sin_y = math.sin(self.yaw)
-        forward = np.array([cos_p * cos_y, sin_p, cos_p * sin_y])
-        up = np.array([0, 1, 0])
-        zaxis = -forward / np.linalg.norm(forward)
-        xaxis = np.cross(up, zaxis); xaxis /= np.linalg.norm(xaxis)
-        yaxis = np.cross(zaxis, xaxis)
+        cdef float fx = <float>(cos_p * cos_y)
+        cdef float fy = <float>sin_p
+        cdef float fz = <float>(cos_p * sin_y)
         
-        view = np.identity(4, dtype=np.float32)
-        view[0, :3] = xaxis; view[1, :3] = yaxis; view[2, :3] = zaxis
-        view[:3, 3] = [-np.dot(xaxis, [self.x, self.y, self.z]),
-                       -np.dot(yaxis, [self.x, self.y, self.z]),
-                       -np.dot(zaxis, [self.x, self.y, self.z])]
-        return view.T
+
+        cdef float len_f = sqrt(fx*fx + fy*fy + fz*fz)
+        cdef float zx = -fx / len_f
+        cdef float zy = -fy / len_f
+        cdef float zz = -fz / len_f
+        
+
+        cdef float ux = 0
+        cdef float uy = 1
+        cdef float uz = 0
+        
+
+        cdef float xx = uy*zz - uz*zy
+        cdef float xy = uz*zx - ux*zz
+        cdef float xz = ux*zy - uy*zx
+        
+
+        cdef float len_x = sqrt(xx*xx + xy*xy + xz*xz)
+        xx = xx / len_x
+        xy = xy / len_x
+        xz = xz / len_x
+        
+        cdef float yx = zy*xz - zz*xy
+        cdef float yy = zz*xx - zx*xz
+        cdef float yz = zx*xy - zy*xx
+        
+        cdef float view[16]
+        
+        view[0] = xx
+        view[1] = yx
+        view[2] = zx
+        view[3] = 0
+        
+        view[4] = xy
+        view[5] = yy
+        view[6] = zy
+        view[7] = 0
+        
+        view[8] = xz
+        view[9] = yz
+        view[10] = zz
+        view[11] = 0
+        
+        view[12] = -(xx*<float>self.x + xy*<float>self.y + xz*<float>self.z)
+        view[13] = -(yx*<float>self.x + yy*<float>self.y + yz*<float>self.z)
+        view[14] = -(zx*<float>self.x + zy*<float>self.y + zz*<float>self.z)
+        view[15] = 1
+        
+        return view
         
 cdef class GameObject:
     cdef public float x, y, z
@@ -202,9 +237,9 @@ cdef class Engine:
         self.window = sdl.SDL_CreateWindow("3D Engine v11", 0,0,width, height, sdl.SDL_WINDOW_OPENGL)
         sdl.SDL_ShowWindow(self.window)
         self.context = sdl.SDL_GL_CreateContext(self.window)
-        gles2.glEnable(gles2.GL_DEPTH_TEST)
-        gles2.glEnable(gles2.GL_BLEND)
-        gles2.glBlendFunc(gles2.GL_SRC_ALPHA, gles2.GL_ONE_MINUS_SRC_ALPHA)
+        render.glEnable(render.GL_DEPTH_TEST)
+        render.glEnable(render.GL_BLEND)
+        render.glBlendFunc(render.GL_SRC_ALPHA, render.GL_ONE_MINUS_SRC_ALPHA)
         
         self.width = width
         self.height = height
@@ -229,45 +264,60 @@ cdef class Engine:
         ], dtype=np.float32)
         cdef float[::1] proj_view = proj 
         
-        gles2.glUseProgram(self.shader)
-        gles2.glUniformMatrix4fv(self.u_proj, 1, 0, &proj_view[0])
+        render.glUseProgram(self.shader)
+        render.glUniformMatrix4fv(self.u_proj, 1, 0, ffi.cast("GLfloat *",<uintptr_t>&proj_view[0]))
 
     cpdef _create_white_texture(self):
         cdef cnp.uint8_t[:] data_view = np.array([255, 255, 255, 255], dtype=np.uint8)
         cdef unsigned int t_id
-        gles2.glGenTextures(1,&t_id)
-        gles2.glBindTexture(gles2.GL_TEXTURE_2D, t_id)
-        gles2.glTexParameteri(gles2.GL_TEXTURE_2D, gles2.GL_TEXTURE_MIN_FILTER, gles2.GL_LINEAR)
-        gles2.glTexParameteri(gles2.GL_TEXTURE_2D, gles2.GL_TEXTURE_MAG_FILTER, gles2.GL_LINEAR)
-        gles2.glTexImage2D(gles2.GL_TEXTURE_2D, 0, gles2.GL_RGBA, 1, 1, 0, gles2.GL_RGBA, gles2.GL_UNSIGNED_BYTE, &data_view[0])
+        render.glGenTextures(1,ffi.cast("GLuint *",<uintptr_t>&t_id))
+        render.glBindTexture(render.GL_TEXTURE_2D, t_id)
+        render.glTexParameteri(render.GL_TEXTURE_2D, render.GL_TEXTURE_MIN_FILTER, render.GL_LINEAR)
+        render.glTexParameteri(render.GL_TEXTURE_2D, render.GL_TEXTURE_MAG_FILTER, render.GL_LINEAR)
+        render.glTexImage2D(render.GL_TEXTURE_2D, 0, render.GL_RGBA, 1, 1, 0, render.GL_RGBA, render.GL_UNSIGNED_BYTE, ffi.cast("void *",<uintptr_t>&data_view[0]))
         return t_id
 
     cpdef camera(self): return self._cam
 
     cpdef _init_shaders(self):
         v_s = """
-        attribute vec3 pos; attribute vec3 col; attribute vec2 uv; attribute vec3 norm;
-        varying vec3 v_col; varying vec2 v_uv; varying vec3 v_norm;
-        uniform mat4 proj, view, model;
-        void main() {
-            v_col = col; v_uv = uv; v_norm = mat3(model) * norm;
-            gl_Position = proj * view * model * vec4(pos, 1.0);
-        }"""
+attribute vec3 pos; attribute vec3 col; attribute vec2 uv; attribute vec3 norm;
+varying vec3 v_col; varying vec2 v_uv; varying vec3 v_norm; 
+varying vec3 v_pos;
+
+uniform mat4 proj, view, model;
+
+void main() {
+    v_col = col; 
+    v_uv = uv; 
+    
+    vec4 worldPos = model * vec4(pos, 1.0);
+    v_pos = worldPos.xyz; 
+    
+    v_norm = mat3(model) * norm;
+    
+    gl_Position = proj * view * worldPos;
+}"""
         f_s = """
-        precision mediump float; varying vec3 v_col; varying vec2 v_uv; varying vec3 v_norm;
-        uniform sampler2D tex;
-        uniform vec3 u_lightPos;
-        void main() {
-            vec3 light = normalize(vec3(u_lightPos));
-            float diff = max(dot(normalize(v_norm), light), 0.25);
-            gl_FragColor = texture2D(tex, v_uv) * vec4(v_col * diff, 1.0);
-        }"""
-        self.shader = load_shaders(v_s,f_s)
-        gles2.glUseProgram(self.shader)
-        self.u_proj = gles2.glGetUniformLocation(self.shader, "proj")
-        self.u_view = gles2.glGetUniformLocation(self.shader, "view")
-        self.u_model = gles2.glGetUniformLocation(self.shader, "model")
-        self.u_lightpos = gles2.glGetUniformLocation(self.shader, "u_lightPos")
+precision mediump float; 
+varying vec3 v_col; varying vec2 v_uv; varying vec3 v_norm;
+varying vec3 v_pos;
+
+uniform sampler2D tex;
+uniform vec3 u_lightPos;
+
+void main() {
+    vec3 lightDir = normalize(u_lightPos - v_pos); 
+    float diff = max(dot(normalize(v_norm), lightDir), 0.25);
+    
+    gl_FragColor = texture2D(tex, v_uv) * vec4(v_col * diff, 1.0);
+}"""
+        self.shader = render. load_shaders(v_s,f_s)
+        render.glUseProgram(self.shader)
+        self.u_proj = render.glGetUniformLocation(self.shader, "proj")
+        self.u_view = render.glGetUniformLocation(self.shader, "view")
+        self.u_model = render.glGetUniformLocation(self.shader, "model")
+        self.u_lightpos = render.glGetUniformLocation(self.shader, "u_lightPos")
         cdef str v_code = """
 attribute vec2 position;
 attribute vec2 texCoord;
@@ -291,7 +341,7 @@ void main() {
         }
         """
 
-        self.gui_shader = load_shaders(v_code, f_code)
+        self.gui_shader = render.load_shaders(v_code, f_code)
 
     cpdef load_texture(self, path):
         cdef unsigned int t_id
@@ -299,13 +349,13 @@ void main() {
         if not os.path.exists(path): return self.default_tex
         try:
             img = Image.open(path).transpose(Image.FLIP_TOP_BOTTOM).convert("RGBA")
-            gles2.glGenTextures(1,&t_id)
-            gles2.glBindTexture(gles2.GL_TEXTURE_2D, t_id)
+            render.glGenTextures(1,ffi.cast("GLuint *",<uintptr_t>&t_id))
+            render.glBindTexture(render.GL_TEXTURE_2D, t_id)
             # фильтрация для MAG_FILTER
-            gles2.glTexParameteri(gles2.GL_TEXTURE_2D, gles2.GL_TEXTURE_MIN_FILTER, gles2.GL_LINEAR)
-            gles2.glTexParameteri(gles2.GL_TEXTURE_2D, gles2.GL_TEXTURE_MAG_FILTER, gles2.GL_LINEAR)
+            render.glTexParameteri(render.GL_TEXTURE_2D, render.GL_TEXTURE_MIN_FILTER, render.GL_LINEAR)
+            render.glTexParameteri(render.GL_TEXTURE_2D, render.GL_TEXTURE_MAG_FILTER, render.GL_LINEAR)
             pixel_view = img.tobytes()
-            gles2.glTexImage2D(gles2.GL_TEXTURE_2D, 0, gles2.GL_RGBA, img.width, img.height, 0, gles2.GL_RGBA, gles2.GL_UNSIGNED_BYTE, &pixel_view[0])
+            render.glTexImage2D(render.GL_TEXTURE_2D, 0, render.GL_RGBA, img.width, img.height, 0, render.GL_RGBA, render.GL_UNSIGNED_BYTE, ffi.cast("void *",<uintptr_t>&pixel_view[0]))
             return t_id
         except:
             return self.default_tex
@@ -362,14 +412,14 @@ void main() {
 
 
         cdef unsigned int vbo
-        gles2.glGenBuffers(1, &vbo)
-        gles2.glBindBuffer(gles2.GL_ARRAY_BUFFER, vbo)
+        render.glGenBuffers(1, ffi.cast("GLuint *",<uintptr_t>&vbo))
+        render.glBindBuffer(render.GL_ARRAY_BUFFER, vbo)
         cdef size_t buffer_size = final_v.size() * sizeof(float)
-        gles2.glBufferData(
-            gles2.GL_ARRAY_BUFFER, 
+        render.glBufferData(
+            render.GL_ARRAY_BUFFER, 
             buffer_size, 
-            &final_v[0], 
-            gles2.GL_STATIC_DRAW
+            ffi.cast("void *",<uintptr_t>&final_v[0]), 
+            render.GL_STATIC_DRAW
         )
 
         
@@ -421,39 +471,17 @@ void main() {
          self.dt = (time_c - self.last) / 1e9
          self.last = time_c
     cpdef ScreenClear(self):
-        gles2.glClear(gles2.GL_COLOR_BUFFER_BIT | gles2.GL_DEPTH_BUFFER_BIT)
+        render.glClear(render.GL_COLOR_BUFFER_BIT | render.GL_DEPTH_BUFFER_BIT)
     cpdef ScreenColor(self, float r, float g, float b, float a=1.0):
-        gles2.glClearColor(r, g, b, a)
+        render.glClearColor(r, g, b, a)
 
     cpdef draw(self, obj):
         if not obj: return
-        gles2.glEnable(gles2.GL_DEPTH_TEST)
-        gles2.glUseProgram(self.shader)
-        s, c = math.sin(obj.angle), math.cos(obj.angle)
-        model = np.array([
-            c * obj.scale_x, 0, s * obj.scale_x, 0,
-            0, obj.scale_y, 0, 0,
-            -s * obj.scale_z, 0, c * obj.scale_z, 0,
-            obj.x, obj.y, obj.z, 1
-        ], dtype=np.float32)
-        cdef float[:] model_view = model.view(np.float32).flatten()
-        gles2.glUniformMatrix4fv(self.u_model, 1, gles2.GL_FALSE, &model_view[0])
-        self.update_projection() 
-        matrix = self._cam.get_view_matrix()
-        cdef float[:] matrix_view = matrix.view(np.float32).flatten()
-        gles2.glUniformMatrix4fv(self.u_view, 1, gles2.GL_FALSE, &matrix_view[0])
-        gles2.glUniform3f(self.u_lightpos, self.sun.x, self.sun.y, self.sun.z)
-        
-        gles2.glBindBuffer(gles2.GL_ARRAY_BUFFER, obj.vbo)
-        for name, size, offset in [("pos",3,0), ("col",3,12), ("uv",2,24), ("norm",3,32)]:
-            name_bytes = name.encode('utf-8') 
-            loc = gles2.glGetAttribLocation(self.shader, name_bytes)
-            if loc != -1:
-                gles2.glEnableVertexAttribArray(loc)
-                gles2.glVertexAttribPointer(loc, size, gles2.GL_FLOAT, gles2.GL_FALSE, 44, <const void*><uintptr_t>offset)
-        
-        gles2.glBindTexture(gles2.GL_TEXTURE_2D, obj.texture_id)
-        gles2.glDrawArrays(gles2.GL_TRIANGLES, 0, obj.count)
+        render.begin_draw(self.shader)
+        render.set_matrices(self._cam,obj,self.u_model,self.u_view)
+        render.set_sun(self.u_lightpos, self.sun)
+        render.setup_vertex(self.shader,obj.vbo)
+        render.draw_mesh(obj)
 
     cpdef draw_gui(self, unsigned int texture_id, float x, float y, float w, float h):
         cdef float sw = <float>self.width
@@ -465,31 +493,31 @@ void main() {
             1.0, 1.0,  1.0, 1.0  
         ], dtype=np.float32)
 
-        gles2.glUseProgram(self.gui_shader)
-        gles2.glDisable(gles2.GL_DEPTH_TEST)
-        gles2.glBindBuffer(gles2.GL_ARRAY_BUFFER, 0)
-        cdef int rect_loc = gles2.glGetUniformLocation(self.gui_shader, "u_rect")
-        gles2.glUniform4f(rect_loc, x, y, w, h)
+        render.glUseProgram(self.gui_shader)
+        render.glDisable(render.GL_DEPTH_TEST)
+        render.glBindBuffer(render.GL_ARRAY_BUFFER, 0)
+        cdef int rect_loc = render.glGetUniformLocation(self.gui_shader, "u_rect")
+        render.glUniform4f(rect_loc, x, y, w, h)
         cdef float proj[16]
         for i in range(16): proj[i] = 0.0
         proj[0] = 2.0 / sw;    proj[12] = -1.0
         proj[5] = -2.0 / sh;   proj[13] = 1.0
         proj[10] = 1.0;        proj[15] = 1.0
 
-        cdef int proj_loc = gles2.glGetUniformLocation(self.gui_shader, "u_proj")
-        gles2.glUniformMatrix4fv(proj_loc, 1, 0, proj)
-        gles2.glActiveTexture(0x84C0)
-        gles2.glBindTexture(gles2.GL_TEXTURE_2D, texture_id)
-        gles2.glUniform1i(gles2.glGetUniformLocation(self.gui_shader, "u_texture"), 0)
+        cdef int proj_loc = render.glGetUniformLocation(self.gui_shader, "u_proj")
+        render.glUniformMatrix4fv(proj_loc, 1, 0, proj)
+        render.glActiveTexture(0x84C0)
+        render.glBindTexture(render.GL_TEXTURE_2D, texture_id)
+        render.glUniform1i(render.glGetUniformLocation(self.gui_shader, "u_texture"), 0)
 
-        cdef int pos_loc = gles2.glGetAttribLocation(self.gui_shader, "position")
-        cdef int uv_loc = gles2.glGetAttribLocation(self.gui_shader, "texCoord")
+        cdef int pos_loc = render.glGetAttribLocation(self.gui_shader, "position")
+        cdef int uv_loc = render.glGetAttribLocation(self.gui_shader, "texCoord")
         
-        gles2.glEnableVertexAttribArray(pos_loc)
-        gles2.glVertexAttribPointer(pos_loc, 2, 0x1406, 0, 16, &view[0])
-        gles2.glEnableVertexAttribArray(uv_loc)
-        gles2.glVertexAttribPointer(uv_loc, 2, 0x1406, 0, 16, &view[2])
+        render.glEnableVertexAttribArray(pos_loc)
+        render.glVertexAttribPointer(pos_loc, 2, 0x1406, 0, 16, ffi.cast("GLfloat *",<uintptr_t>&view[0]))
+        render.glEnableVertexAttribArray(uv_loc)
+        render.glVertexAttribPointer(uv_loc, 2, 0x1406, 0, 16, ffi.cast("GLfloat *",<uintptr_t>&view[2]))
 
-        gles2.glDrawArrays(0x0005, 0, 4)
-        gles2.glEnable(gles2.GL_DEPTH_TEST)
+        render.glDrawArrays(0x0005, 0, 4)
+        render.glEnable(render.GL_DEPTH_TEST)
 
